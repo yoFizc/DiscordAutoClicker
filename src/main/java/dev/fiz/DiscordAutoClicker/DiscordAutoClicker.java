@@ -1,44 +1,18 @@
 package dev.fiz.DiscordAutoClicker;
 
-import net.dv8tion.jda.api.EmbedBuilder;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
 import net.dv8tion.jda.api.entities.Guild;
-import net.dv8tion.jda.api.entities.Message;
-import net.dv8tion.jda.api.entities.MessageEmbed;
-import net.dv8tion.jda.api.entities.User;
 import net.dv8tion.jda.api.entities.channel.concrete.TextChannel;
-import net.dv8tion.jda.api.events.interaction.component.ButtonInteractionEvent;
-import net.dv8tion.jda.api.hooks.ListenerAdapter;
-import net.dv8tion.jda.api.interactions.components.buttons.Button;
-import net.dv8tion.jda.api.utils.messages.MessageCreateBuilder;
-import net.dv8tion.jda.api.utils.messages.MessageCreateData;
 import org.apache.commons.cli.*;
-import org.jetbrains.annotations.NotNull;
-import org.jnativehook.GlobalScreen;
-import org.jnativehook.mouse.NativeMouseEvent;
-import org.jnativehook.mouse.NativeMouseListener;
-
-import java.awt.*;
-import java.awt.event.InputEvent;
-import java.util.Random;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 
 public class DiscordAutoClicker {
 
-    private static final String CONFIG_FILE = "src/main/resources/Config.yml";
 
     private String TOKEN;
     private String GUILD_ID;
     private String CHANNEL_ID;
 
-    private boolean state = false;
-    private boolean holding = false;
-    private boolean skipNextPress = false;
-    private boolean skipNextRelease = false;
-    private boolean chill = false;
-    private int cps = 10;
 
     public static void main(String[] args) throws Exception {
         CommandLineParser parser = new DefaultParser();
@@ -69,14 +43,12 @@ public class DiscordAutoClicker {
     }
 
     private void start() throws Exception {
-        JDA jda = JDABuilder.createDefault(TOKEN)
-                .build()
-                .awaitReady();
+        JDA jda = JDABuilder.createDefault(TOKEN).build().awaitReady();
 
         Guild guild = jda.getGuildById(GUILD_ID);
 
         if (guild == null) {
-            System.out.println("Could not find guild with ID "+GUILD_ID);
+            System.out.println("Could not find guild with ID " + GUILD_ID);
             System.exit(0);
             return;
         }
@@ -89,136 +61,13 @@ public class DiscordAutoClicker {
             return;
         }
 
-        MessageCreateData messageData = new MessageCreateBuilder()
-                .setEmbeds(buildEmbed())
-                .addActionRow(
-                        Button.danger("exit", "\uD83D\uDCA3"),
-                        Button.primary("increase", "⬆️"),
-                        Button.primary("decrease", "⬇️"),
-                        Button.success("enable", "🟢"),
-                        Button.danger("disable", "🔴")
-                ).build();
+        Clicker clicker = new Clicker();
+        BotListener botListener = new BotListener(clicker);
 
-        Message message = channel.sendMessage(messageData).complete();
+        botListener.sendInitialMessage(channel);
 
-        jda.addEventListener(new ListenerAdapter() {
+        jda.addEventListener(botListener);
 
-            @Override
-            public void onButtonInteraction(@NotNull ButtonInteractionEvent event) {
-                User user = event.getUser();
-
-                if (user.isBot()) return;
-                if (event.getMessageIdLong() != message.getIdLong()) return;
-
-                switch (event.getComponentId()) {
-                    case "exit":
-                        message.delete().queue($ -> {
-                            System.exit(0);
-                        });
-                        break;
-                    case "increase":
-                        cps = Math.min(30, cps + 1);
-                        event.editMessageEmbeds(buildEmbed()).queue();
-                        break;
-                    case "decrease":
-                        cps = Math.max(5, cps - 1);
-                        event.editMessageEmbeds(buildEmbed()).queue();
-                        break;
-                    case "enable":
-                        state = true;
-                        event.editMessageEmbeds(buildEmbed()).queue();
-                        break;
-                    case "disable":
-                        state = false;
-                        event.editMessageEmbeds(buildEmbed()).queue();
-                        break;
-                }
-            }
-        });
-
-        Logger logger = Logger.getLogger(GlobalScreen.class.getPackage().getName());
-        logger.setLevel(Level.WARNING);
-        logger.setUseParentHandlers(false);
-
-        GlobalScreen.registerNativeHook();
-
-        GlobalScreen.addNativeMouseListener(new NativeMouseListener() {
-            @Override
-            public void nativeMouseClicked(NativeMouseEvent event) {
-            }
-
-            @Override
-            public void nativeMousePressed(NativeMouseEvent event) {
-                if (event.getButton() == NativeMouseEvent.BUTTON1) {
-                    if (skipNextPress) {
-                        skipNextPress = false;
-                    } else {
-                        holding = true;
-                        chill = true;
-                    }
-                }
-            }
-
-            @Override
-            public void nativeMouseReleased(NativeMouseEvent event) {
-                if (event.getButton() == NativeMouseEvent.BUTTON1) {
-                    if (skipNextRelease) {
-                        skipNextRelease = false;
-                    } else {
-                        holding = false;
-                    }
-                }
-            }
-        });
-
-        Robot robot = new Robot();
-        Random random = new Random();
-
-        while (true) {
-            if (state && holding) {
-                if (!chill) {
-                    skipNextPress = true;
-                    robot.mousePress(InputEvent.BUTTON1_DOWN_MASK);
-                }
-
-                long ms = calculateRandomInterval(cps, random);
-
-                Thread.sleep(ms / 2);
-
-                if (!chill) {
-                    skipNextRelease = true;
-                    robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
-                }
-
-                Thread.sleep(ms / 2);
-
-                chill = false;
-            }
-
-            Thread.sleep(1);
-        }
-    }
-
-    private long calculateRandomInterval(int cps, Random random) {
-        double baseInterval = 1000.0 / cps;
-        double randomFactor = 0.5 + (1.5 * random.nextDouble());
-        return (long) (baseInterval * randomFactor);
-    }
-
-
-
-    private MessageEmbed buildEmbed() {
-        return new EmbedBuilder()
-                .setColor(Color.RED)
-                .setDescription("Press the buttons below to control the auto clicker\n"
-                        + "\uD83D\uDCA3 Exit the auto clicker\n"
-                        + "⬆️ Increase your CPS\n"
-                        + "⬇️ Decrease your CPS\n"
-                        + "🟢 Enable the auto clicker\n"
-                        + "🔴 Disable the auto clicker\n"
-                        + "\n"
-                        + "Enabled: " + (state ? "🟢" : "🔴") + "\n"
-                        + "CPS: " + cps)
-                .build();
+        clicker.start();
     }
 }
